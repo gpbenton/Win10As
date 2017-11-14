@@ -44,6 +44,7 @@ namespace mqttclient
 
         MqttClient client;
         Audio audioobj = new Audio();
+        private bool ending = false;
 
         private string g_mqtttopic { get; set; }
         private string g_TriggerFile { get; set; }
@@ -91,6 +92,7 @@ namespace mqttclient
                 InitializeComponent();
               //  toolStripStatusLabel2.Text = Application.ProductVersion;
                 Version version = Assembly.GetExecutingAssembly().GetName().Version;
+
                 toolStripStatusLabel2.Text = "";
 
 
@@ -99,7 +101,6 @@ namespace mqttclient
 
                
                 Properties.Settings.Default.Upgrade();
-                mqttconnect();
                 SetupTimer();
                 LoadTriggerlist();
                 notifyIcon1.Visible = false;
@@ -126,17 +127,23 @@ namespace mqttclient
                     g_mqtttopic = Properties.Settings.Default["mqtttopic"].ToString() + "/#";
 
                     client = new MqttClient(Properties.Settings.Default["mqttserver"].ToString(), Convert.ToInt32(Properties.Settings.Default["mqttport"].ToString()), false, null, null, MqttSslProtocols.None, null);
+                    byte code;
+
 
                     if (Properties.Settings.Default["mqttusername"].ToString().Length > 3)
                     {
-
-                        byte code = client.Connect(Guid.NewGuid().ToString());
+                        code = client.Connect(Guid.NewGuid().ToString());
                     }
                     else
                     {
-                        byte code = client.Connect(Guid.NewGuid().ToString(), Properties.Settings.Default["mqttusername"].ToString(), Properties.Settings.Default["mqttpassword"].ToString());
+                        code = client.Connect(Guid.NewGuid().ToString(), Properties.Settings.Default["mqttusername"].ToString(), Properties.Settings.Default["mqttpassword"].ToString());
                     }
 
+                    if (code != 0)
+                    {
+                        toolStripStatusLabel1.Text = "reconnecting - error " + Convert.ToString(code);
+                    }
+                    
                     client.MqttMsgPublishReceived += client_MqttMsgPublishReceived;
                     client.ConnectionClosed += client_MqttConnectionClosed;
                     client.Subscribe(new string[] { g_mqtttopic }, new byte[] { MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE });
@@ -144,26 +151,25 @@ namespace mqttclient
                 }
                 else
                 {
-                    toolStripStatusLabel1.Text = "not connected,check settings";
+                    toolStripStatusLabel1.Text = "not connected,check server setting";
                 }
             }
 
             catch (Exception ex)
             {
-                toolStripStatusLabel1.Text = "not connected,check settings. Error:" + ex.InnerException.ToString();
+                toolStripStatusLabel1.Text = "not connected,check settings. Error:" + ex.Message;
             }
 
         }
         private void client_MqttConnectionClosed(object sender, EventArgs e)
         {
-            try
+            if (ending)
             {
-                toolStripStatusLabel1.Text = "not connected";
+                Application.Exit();
             }
-            catch (Exception)
+            else
             {
-
-                throw;
+                mqttconnect();
             }
 
         }
@@ -699,13 +705,25 @@ namespace mqttclient
         }
         private void FrmMqttMain_FormClosing(object sender, FormClosingEventArgs e)
         {
-            //hard exit
-            Environment.Exit(0);
+            ending = true;
+
+            if (client.IsConnected)
+            {
+                client.Disconnect();
+            }
         }
 
         private void toolStripStatusLabel2_Click(object sender, EventArgs e)
         {
 
+        }
+
+        private void FrmMqttMain_Shown(object sender, EventArgs e)
+        {
+            toolStripStatusLabel1.Text = "connecting";
+            this.Refresh();
+
+            mqttconnect();
         }
     }
 }
